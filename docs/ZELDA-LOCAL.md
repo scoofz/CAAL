@@ -148,3 +148,9 @@ approuvé par ce navigateur. Le port 3000 ne sert pas HTTPS.
 L’interface vérifie maintenant l’accès au microphone avant de connecter la
 session et affiche une erreur si la capture est refusée ou indisponible.
 Une session LiveKit sans piste microphone ne peut déclencher ni wake word ni STT.
+
+Le profil Zelda utilise désormais `wss://IP_DE_LA_VM:3443/livekit` pour la
+signalisation LiveKit : page et WebSocket partagent la même origine TLS.
+Le certificat autosigné est installé côté serveur ; sa confiance reste à
+configurer sur chaque appareil client. Le port 7443 reste disponible pour les
+anciens clients mais n’est plus utilisé par ce profil.
