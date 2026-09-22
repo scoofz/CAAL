@@ -97,7 +97,8 @@ Le profil active ce détecteur à un seuil de 0,5. La session du navigateur doit
 ## Tests de développement
 
 ```bash
-python3 -m unittest discover -s tests -v
+uv sync --frozen
+uv run python -m unittest discover -s tests -v
 cd frontend
 pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit
@@ -154,3 +155,26 @@ signalisation LiveKit : page et WebSocket partagent la même origine TLS.
 Le certificat autosigné est installé côté serveur ; sa confiance reste à
 configurer sur chaque appareil client. Le port 7443 reste disponible pour les
 anciens clients mais n’est plus utilisé par ce profil.
+
+## Secours vocal français
+
+Le profil Zelda active `ZELDA_WAKE_TRANSCRIPTION_FALLBACK=true`. Avec le STT
+Speaches local, Whisper transcrit les segments de parole même en attente.
+Seules les phrases commençant par « Hey Zelda » ou « Hé Zelda » ouvrent
+l’écoute ; les autres transcriptions ne sont pas envoyées au LLM. Après
+activation, la fenêtre de suivi habituelle reste active jusqu’au silence.
+Dire « Hey Zelda », marquer une pause et attendre la réponse avant la commande.
+Une commande dans la même phrase est aussi conservée, sans le préfixe.
+Ce secours ajoute le délai de fin de parole et de transcription, et consomme
+davantage de CPU. OpenWakeWord reste actif en parallèle au seuil 0,5.
+Le secours n’est pas activé avec le fournisseur STT cloud.
+
+Validation : quatre tests du filtrage passent ; un échantillon français
+active le secours avec OpenWakeWord forcé sous le seuil. L’échantillon anglais
+atteint 0,831 via le rééchantillonnage LiveKit, ce qui confirme que ce chemin
+audio peut alimenter correctement le modèle communautaire.
+
+Test de bout en bout : une piste audio synthétique française publiée dans une
+session LiveKit a déclenché le secours Whisper ; l’état ACTIVE et la réponse
+vocale Qwen « Oui ? » ont été reçus par le client de test. Les treize tests
+TTS, HA et wake word passent dans le conteneur déployé.

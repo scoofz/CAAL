@@ -67,6 +67,7 @@ services:
       - CAAL_SETTINGS_PATH=/app/config/settings.json
       - QWEN_TTS_URL=${QWEN_TTS_URL}
       - QWEN_TTS_API_KEY=${QWEN_TTS_API_KEY}
+      - ZELDA_WAKE_TRANSCRIPTION_FALLBACK=true
       - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-small}
     volumes:
       - zelda-memory:/app/data

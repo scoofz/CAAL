@@ -364,7 +364,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         logger.info(f"  STT: Groq (whisper-large-v3-turbo, lang={language})")
     else:
         logger.info(f"  STT: {SPEACHES_URL} ({WHISPER_MODEL}, lang={language})")
-    if runtime["tts_provider"] == "piper":
+    if runtime["tts_provider"] == "qwen3":
+        logger.info("  TTS: Qwen3 (zelda)")
+    elif runtime["tts_provider"] == "piper":
         logger.info(f"  TTS: Piper ({runtime['tts_voice_piper']})")
     else:
         logger.info(f"  TTS: Kokoro ({runtime['tts_voice_kokoro']})")
@@ -432,18 +434,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 greeting = random.choice(wake_greetings)
                 logger.info(f"Wake word detected, playing greeting: {greeting}")
 
-                # Get TTS and audio output from session
-                tts = _session_ref.tts
-                audio_output = _session_ref.output.audio
-
-                # Synthesize and push audio frames directly (bypasses turn-taking)
-                audio_stream = tts.synthesize(greeting)
-                async for event in audio_stream:
-                    if hasattr(event, "frame") and event.frame:
-                        await audio_output.capture_frame(event.frame)
-
-                # Flush to complete the audio segment
-                audio_output.flush()
+                # Let the session track speaking state and manage audio output.
+                await _session_ref.say(greeting, allow_interruptions=False)
 
             except Exception as e:
                 logger.warning(f"Failed to play wake greeting: {e}")
@@ -467,6 +459,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         stt_instance = WakeWordGatedSTT(
             inner_stt=base_stt,
             model_path=wake_word_model,
+            transcription_fallback=(
+                runtime["stt_provider"] == "speaches"
+                and os.getenv("ZELDA_WAKE_TRANSCRIPTION_FALLBACK", "false").lower() == "true"
+            ),
             threshold=wake_word_threshold,
             silence_timeout=wake_word_timeout,
             on_wake_detected=on_wake_detected,

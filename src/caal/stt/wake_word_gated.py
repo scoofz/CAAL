@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 import numpy as np
@@ -37,6 +38,15 @@ from openwakeword.model import Model as OWWModel
 logger = logging.getLogger(__name__)
 
 
+_ZELDA_WAKE = re.compile(r"^\s*(?:hey|hé|héy|eh)[\s,!.:;—-]+zelda\b[\s,!.:;?—-]*", re.IGNORECASE)
+
+
+def strip_zelda_wake(text: str) -> str | None:
+    """Match an explicit opening invocation; never match incidental mentions."""
+    match = _ZELDA_WAKE.match(text)
+    return text[match.end():].strip() if match else None
+
+
 class WakeWordState(str, Enum):
     """State of wake word detection."""
 
@@ -56,7 +66,8 @@ class WakeWordEvent:
 class WakeWordGatedSTT(STT):
     """STT wrapper that gates audio through OpenWakeWord detection.
 
-    Audio is only forwarded to the inner STT when the wake word is detected.
+    By default audio reaches STT after detection. The optional local Zelda
+    fallback transcribes speech while suppressing downstream events until invoked.
     After a configurable silence timeout, returns to wake word listening mode.
     """
 
@@ -66,6 +77,7 @@ class WakeWordGatedSTT(STT):
         inner_stt: STT,
         model_path: str,
         threshold: float = 0.5,
+        transcription_fallback: bool = False,
         silence_timeout: float = 3.0,
         on_wake_detected: Callable[[], Awaitable[None]] | None = None,
         on_state_changed: Callable[[WakeWordState], Awaitable[None]] | None = None,
@@ -86,6 +98,7 @@ class WakeWordGatedSTT(STT):
         super().__init__(
             capabilities=STTCapabilities(streaming=True, interim_results=False)
         )
+        self._transcription_fallback = transcription_fallback
         self._inner = inner_stt
         self._model_path = model_path
         self._threshold = threshold
@@ -142,6 +155,7 @@ class WakeWordGatedSTT(STT):
             inner_stt=self._inner,
             oww=self._ensure_model(),
             threshold=self._threshold,
+            transcription_fallback=self._transcription_fallback,
             silence_timeout=self._silence_timeout,
             on_wake_detected=self._on_wake_detected,
             on_state_changed=self._on_state_changed,
@@ -182,6 +196,7 @@ class WakeWordGatedStream(RecognizeStream):
         inner_stt: STT,
         oww: OWWModel,
         threshold: float,
+        transcription_fallback: bool,
         silence_timeout: float,
         on_wake_detected: Callable[[], Awaitable[None]] | None,
         on_state_changed: Callable[[WakeWordState], Awaitable[None]] | None,
@@ -194,6 +209,7 @@ class WakeWordGatedStream(RecognizeStream):
             conn_options=conn_options,
             sample_rate=self.OWW_SAMPLE_RATE,
         )
+        self._transcription_fallback = transcription_fallback
         self._inner_stt = inner_stt
         self._oww = oww
         self._threshold = threshold
@@ -256,7 +272,7 @@ class WakeWordGatedStream(RecognizeStream):
             """Process incoming audio frames."""
             async for data in self._input_ch:
                 if isinstance(data, self._FlushSentinel):
-                    if self._state == WakeWordState.ACTIVE:
+                    if self._state == WakeWordState.ACTIVE or self._transcription_fallback:
                         self._inner_stream.flush()
                         vad_stream.flush()
                     continue
@@ -265,8 +281,8 @@ class WakeWordGatedStream(RecognizeStream):
 
                 if self._state == WakeWordState.LISTENING:
                     await self._process_wake_word(frame)
-                else:
-                    # Active mode - forward to StreamAdapter AND VAD tracker
+                if self._state == WakeWordState.ACTIVE or self._transcription_fallback:
+                    # Fallback transcribes locally while keeping downstream events gated.
                     self._inner_stream.push_frame(frame)
                     vad_stream.push_frame(frame)
 
@@ -277,7 +293,7 @@ class WakeWordGatedStream(RecognizeStream):
         async def _read_inner_events() -> None:
             """Read events from inner StreamAdapter and forward them."""
             async for event in self._inner_stream:
-                self._event_ch.send_nowait(event)
+                await self._handle_inner_event(event)
                 # Reset silence timer on any speech event (STT activity)
                 if event.type in (
                     SpeechEventType.START_OF_SPEECH,
@@ -333,6 +349,33 @@ class WakeWordGatedStream(RecognizeStream):
             if self._inner_stream:
                 await self._inner_stream.aclose()
             await vad_stream.aclose()
+
+    async def _handle_inner_event(self, event: SpeechEvent) -> None:
+        """Keep ambient transcripts away from the agent until explicitly invoked."""
+        if not self._transcription_fallback:
+            self._event_ch.send_nowait(event)
+            return
+        remainder = None
+        if event.type == SpeechEventType.FINAL_TRANSCRIPT and event.alternatives:
+            remainder = strip_zelda_wake(event.alternatives[0].text)
+        if self._state == WakeWordState.LISTENING:
+            if remainder is None or self._agent_busy:
+                return
+            logger.info("Wake word detected by local transcription fallback")
+            await self._set_state(WakeWordState.ACTIVE)
+            self._last_speech_time = time.time()
+            if not remainder:
+                if self._on_wake_detected:
+                    asyncio.create_task(self._on_wake_detected())
+                return
+            # The adapter's speech boundaries were suppressed while listening.
+            self._event_ch.send_nowait(SpeechEvent(SpeechEventType.START_OF_SPEECH))
+            self._event_ch.send_nowait(SpeechEvent(SpeechEventType.END_OF_SPEECH))
+        if remainder is not None:
+            if not remainder:
+                return
+            event = replace(event, alternatives=[replace(event.alternatives[0], text=remainder)])
+        self._event_ch.send_nowait(event)
 
     async def _process_wake_word(self, frame: rtc.AudioFrame) -> None:
         """Process audio frame for wake word detection."""
