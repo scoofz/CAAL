@@ -137,3 +137,14 @@ Le nom du bridge peut changer si le réseau Docker est supprimé puis recréé.
 Les paramètres utilisent explicitement `/app/config/settings.json` ; les clés
 LiveKit sont générées dans les deux fichiers de configuration privés de `.local/`.
 Les certificats sont exclus du contexte de construction Docker.
+
+## Microphone et adresse du navigateur
+
+`http://IP_DE_LA_VM:3000` permet d’afficher l’interface depuis le réseau,
+mais n’autorise pas la capture microphone dans les navigateurs.
+Utiliser `http://localhost:3000` sur la VM, ou
+`https://IP_DE_LA_VM:3443` depuis une autre machine avec le certificat local
+approuvé par ce navigateur. Le port 3000 ne sert pas HTTPS.
+L’interface vérifie maintenant l’accès au microphone avant de connecter la
+session et affiche une erreur si la capture est refusée ou indisponible.
+Une session LiveKit sans piste microphone ne peut déclencher ni wake word ni STT.
