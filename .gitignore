@@ -104,3 +104,8 @@ mobile/.packages
 mobile/.pub-cache/
 mobile/.pub/
 mobile/releases/*.apk
+
+# Local Zelda models, credentials and generated audio
+.local/
+*.gguf
+*.wav

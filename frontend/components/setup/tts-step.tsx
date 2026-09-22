@@ -35,7 +35,12 @@ export function TtsStep({ data, updateData }: TtsStepProps) {
     fetchVoices();
   }, [data.tts_provider]);
 
-  const currentVoice = data.tts_provider === 'piper' ? data.tts_voice_piper : data.tts_voice_kokoro;
+  const currentVoice =
+    data.tts_provider === 'qwen3'
+      ? 'zelda'
+      : data.tts_provider === 'piper'
+        ? data.tts_voice_piper
+        : data.tts_voice_kokoro;
 
   const handleVoiceChange = (voice: string) => {
     if (data.tts_provider === 'piper') {
@@ -50,6 +55,17 @@ export function TtsStep({ data, updateData }: TtsStepProps) {
       <div className="space-y-2">
         <label className="text-sm font-medium">{t('engine')}</label>
         <div className="grid grid-cols-1 gap-2">
+          <button
+            onClick={() => updateData({ tts_provider: 'qwen3' })}
+            className={`rounded-lg border p-4 text-left transition-colors ${
+              data.tts_provider === 'qwen3'
+                ? 'border-primary bg-primary/5'
+                : 'border-input hover:border-muted-foreground'
+            }`}
+          >
+            <div className="font-medium">Qwen3-TTS</div>
+            <div className="text-muted-foreground text-xs">{t('qwen3Note')}</div>
+          </button>
           <button
             onClick={() => updateData({ tts_provider: 'kokoro' })}
             className={`rounded-lg border p-4 text-left transition-colors ${
@@ -80,7 +96,7 @@ export function TtsStep({ data, updateData }: TtsStepProps) {
         <select
           value={currentVoice}
           onChange={(e) => handleVoiceChange(e.target.value)}
-          disabled={loading}
+          disabled={loading || data.tts_provider === 'qwen3'}
           className="border-input bg-background w-full rounded-lg border px-4 py-3 text-sm disabled:opacity-50"
         >
           {voices.length > 0 ? (
@@ -96,7 +112,11 @@ export function TtsStep({ data, updateData }: TtsStepProps) {
       </div>
 
       <p className="text-muted-foreground text-xs">
-        {data.tts_provider === 'kokoro' ? t('kokoroNote') : t('piperNote')}
+        {data.tts_provider === 'qwen3'
+          ? t('qwen3Note')
+          : data.tts_provider === 'kokoro'
+            ? t('kokoroNote')
+            : t('piperNote')}
       </p>
     </div>
   );

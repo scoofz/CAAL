@@ -497,7 +497,15 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 f"Kokoro TTS with {language} (no Piper service available)"
             )
 
-    if tts_provider == "piper":
+    if tts_provider == "qwen3":
+        tts_instance = SyncOpenAITTS(
+            base_url=os.getenv("QWEN_TTS_URL", "http://host.docker.internal:8890/v1"),
+            api_key=os.getenv("QWEN_TTS_API_KEY", "not-needed"),
+            model="qwen3-tts",
+            voice="zelda",
+            response_format="wav",
+        )
+    elif tts_provider == "piper":
         piper_voice = runtime["tts_voice_piper"]
         tts_instance = openai.TTS(
             base_url=f"{PIPER_URL}/v1",

@@ -614,6 +614,9 @@ async def get_voices(provider: str | None = None) -> VoicesResponse:
         settings = settings_module.load_settings()
         provider = settings.get("tts_provider", "kokoro")
 
+    if provider == "qwen3":
+        return VoicesResponse(voices=["zelda"])
+
     if provider == "piper":
         # Piper voices are model IDs - return curated list
         return VoicesResponse(voices=PIPER_VOICES)

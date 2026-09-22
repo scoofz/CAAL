@@ -45,7 +45,7 @@ interface Settings {
   openrouter_api_key: string;
   openrouter_model: string;
   // TTS
-  tts_provider: 'kokoro' | 'piper';
+  tts_provider: 'kokoro' | 'piper' | 'qwen3';
   tts_voice_kokoro: string;
   tts_voice_piper: string;
   // LLM settings
@@ -634,7 +634,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setGreetingsContent(value);
   };
 
-  const handleTtsProviderChange = async (provider: 'kokoro' | 'piper') => {
+  const handleTtsProviderChange = async (provider: 'kokoro' | 'piper' | 'qwen3') => {
     if (provider === settings.tts_provider) return;
 
     setSettings({ ...settings, tts_provider: provider });
@@ -658,7 +658,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const handleLanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newLocale = e.target.value;
     // Switch TTS provider based on language (kokoro=English, piper=French/Italian/etc.)
-    const newTtsProvider = newLocale === 'en' ? 'kokoro' : 'piper';
+    const newTtsProvider =
+      settings.tts_provider === 'qwen3' ? 'qwen3' : newLocale === 'en' ? 'kokoro' : 'piper';
     const piperModels: Record<string, string> = {
       en: 'speaches-ai/piper-en_US-ryan-high',
       fr: 'speaches-ai/piper-fr_FR-siwis-medium',
@@ -1073,6 +1074,16 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           style={{ background: 'rgb(from var(--surface-2) r g b / 0.5)' }}
         >
           <button
+            onClick={() => handleTtsProviderChange('qwen3')}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              settings.tts_provider === 'qwen3'
+                ? 'bg-background text-foreground shadow'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Qwen3-TTS
+          </button>
+          <button
             onClick={() => handleTtsProviderChange('kokoro')}
             className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               settings.tts_provider === 'kokoro'
@@ -1094,9 +1105,11 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           </button>
         </div>
         <p className="text-muted-foreground text-xs">
-          {settings.tts_provider === 'kokoro'
-            ? t('providers.kokoroDesc')
-            : t('providers.piperDesc')}
+          {settings.tts_provider === 'qwen3'
+            ? t('tts.qwen3Note')
+            : settings.tts_provider === 'kokoro'
+              ? t('providers.kokoroDesc')
+              : t('providers.piperDesc')}
         </p>
 
         {/* Voice selector (moved from Agent tab) */}
@@ -1104,9 +1117,11 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           <label className="text-sm font-medium">{t('agent.voice')}</label>
           <select
             value={
-              settings.tts_provider === 'piper'
-                ? settings.tts_voice_piper
-                : settings.tts_voice_kokoro
+              settings.tts_provider === 'qwen3'
+                ? 'zelda'
+                : settings.tts_provider === 'piper'
+                  ? settings.tts_voice_piper
+                  : settings.tts_voice_kokoro
             }
             onChange={(e) => {
               if (settings.tts_provider === 'piper') {
@@ -1115,9 +1130,12 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 setSettings({ ...settings, tts_voice_kokoro: e.target.value });
               }
             }}
+            disabled={settings.tts_provider === 'qwen3'}
             className="select-field text-foreground w-full px-4 py-3 text-sm"
           >
-            {voices.length > 0 ? (
+            {settings.tts_provider === 'qwen3' ? (
+              <option value="zelda">Zelda</option>
+            ) : voices.length > 0 ? (
               voices.map((voice) => (
                 <option key={voice} value={voice}>
                   {voice}
