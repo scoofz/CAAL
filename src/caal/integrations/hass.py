@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -28,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 # Cache TTL in seconds (5 minutes)
 DEVICE_CACHE_TTL = 300
+
+
+def _live_context_text(text: str) -> str:
+    """Unwrap HA's JSON result while retaining support for legacy plain text."""
+    try:
+        payload = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    if isinstance(payload, dict) and isinstance(payload.get("result"), str):
+        return payload["result"].replace("\\n", "\n")
+    return text
 
 
 @dataclass
@@ -68,51 +80,34 @@ class HADeviceCache:
         ```
         """
         self.devices.clear()
-
-        # Parse entities from the context text
+        text = _live_context_text(text)
         current_entity: dict[str, str] = {}
 
-        for line in text.split("\n"):
+        def save_entity() -> None:
+            name = current_entity.get("names")
+            domain = current_entity.get("domain")
+            if not domain:
+                domain = current_entity.get("entity_id", "").split(".")[0]
+            if name and domain:
+                self.devices[name.lower()] = HADevice(
+                    name=name, domain=domain,
+                    state=current_entity.get("state", "unknown"),
+                    area=current_entity.get("area") or current_entity.get("areas"),
+                )
+
+        for line in text.splitlines():
             line = line.strip()
-            if not line:
-                # End of entity block - save if valid
-                if current_entity.get("names") and current_entity.get("entity_id"):
-                    entity_id = current_entity["entity_id"]
-                    # Extract domain from entity_id (e.g., "cover" from "cover.garage_door")
-                    domain = entity_id.split(".")[0] if "." in entity_id else "unknown"
-
-                    device = HADevice(
-                        name=current_entity["names"],
-                        domain=domain,
-                        state=current_entity.get("state", "unknown"),
-                        area=current_entity.get("area"),
-                    )
-                    # Store by lowercase name for case-insensitive lookup
-                    self.devices[device.name.lower()] = device
-
+            if not line or line.startswith("- names:"):
+                save_entity()
                 current_entity = {}
-                continue
-
-            # Parse key: value lines
+            if line.startswith("- "):
+                line = line[2:]
             if ":" in line:
                 key, _, value = line.partition(":")
                 key = key.strip().lower()
-                value = value.strip()
-
-                if key in ("entity_id", "names", "state", "area"):
-                    current_entity[key] = value
-
-        # Handle last entity if no trailing newline
-        if current_entity.get("names") and current_entity.get("entity_id"):
-            entity_id = current_entity["entity_id"]
-            domain = entity_id.split(".")[0] if "." in entity_id else "unknown"
-            device = HADevice(
-                name=current_entity["names"],
-                domain=domain,
-                state=current_entity.get("state", "unknown"),
-                area=current_entity.get("area"),
-            )
-            self.devices[device.name.lower()] = device
+                if key in ("entity_id", "names", "state", "area", "areas", "domain"):
+                    current_entity[key] = value.strip().strip("\"'")
+        save_entity()
 
         self.last_updated = time.time()
         logger.debug(f"Parsed {len(self.devices)} devices from GetLiveContext")
@@ -196,7 +191,7 @@ INTENT_MAP: dict[tuple[str, str | None], tuple[str, dict]] = {
 }
 
 
-async def detect_hass_tool_prefix(hass_server: mcp.MCPServerHTTP) -> str:
+async def detect_hass_tool_prefix(hass_server: mcp.MCPServerHTTP) -> str | dict[str, str]:
     """Detect the tool prefix used by the Home Assistant MCP server.
 
     Some HA MCP implementations use 'assist__' prefix (e.g., assist__HassTurnOn),
@@ -206,7 +201,7 @@ async def detect_hass_tool_prefix(hass_server: mcp.MCPServerHTTP) -> str:
         hass_server: Connected Home Assistant MCP server
 
     Returns:
-        Tool prefix string ('assist__' or '')
+        Legacy prefix string, or a mapping from intent names to advertised tool names
     """
     if not hass_server or not hasattr(hass_server, "_client"):
         return ""
@@ -216,11 +211,17 @@ async def detect_hass_tool_prefix(hass_server: mcp.MCPServerHTTP) -> str:
         result = await hass_server._client.list_tools()
         tool_names = [tool.name for tool in result.tools]
 
-        # Check for assist__ prefix
-        for name in tool_names:
-            if name.startswith("assist__"):
-                logger.info("Detected Home Assistant MCP with 'assist__' prefix")
-                return "assist__"
+        # Recent HA versions namespace each tool by its integration, so there
+        # is no single prefix shared by GetLiveContext and device intents.
+        if any("__" in name for name in tool_names):
+            mapping = {}
+            for name in tool_names:
+                intent = name.rsplit("__", 1)[-1]
+                if intent in mapping:
+                    raise ValueError(f"Ambiguous Home Assistant intent: {intent}")
+                mapping[intent] = name
+            logger.info("Detected Home Assistant namespaced tools")
+            return mapping
 
         logger.info("Detected Home Assistant MCP with bare tool names")
         return ""
@@ -232,13 +233,13 @@ async def detect_hass_tool_prefix(hass_server: mcp.MCPServerHTTP) -> str:
 
 def create_hass_tools(
     hass_server: mcp.MCPServerHTTP,
-    tool_prefix: str = "",
+    tool_prefix: str | dict[str, str] = "",
 ) -> tuple[list[dict], dict]:
     """Create Home Assistant tools bound to the given MCP server.
 
     Args:
         hass_server: Connected Home Assistant MCP server
-        tool_prefix: Tool name prefix (e.g., 'assist__' or '')
+        tool_prefix: Legacy prefix or discovered intent-to-tool mapping
 
     Returns:
         tuple: (tool_definitions, tool_callables)
@@ -250,6 +251,8 @@ def create_hass_tools(
 
     def _apply_prefix(tool_name: str) -> str:
         """Apply the detected prefix to a tool name."""
+        if isinstance(tool_prefix, dict):
+            return tool_prefix.get(tool_name, tool_name)
         return f"{tool_prefix}{tool_name}"
 
     def _resolve_intent(action: str, domain: str | None) -> tuple[str, dict]:
@@ -388,7 +391,7 @@ def create_hass_tools(
 
             # Extract content
             texts = [c.text for c in result.content if hasattr(c, "text") and c.text]
-            full_context = " ".join(texts) if texts else "No devices found"
+            full_context = _live_context_text(" ".join(texts)) if texts else "No devices found"
 
             # Update device cache while we have the data
             device_cache.parse_live_context(full_context)

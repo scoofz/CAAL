@@ -53,7 +53,7 @@ Le pont expose /v1/audio/speech, accepte uniquement la voix zelda et renvoie du 
 
 ## 3. Installer puis démarrer Docker
 
-Docker n'était pas disponible pendant la préparation. À exécuter dans le terminal de la VM :
+Sur une nouvelle VM, installer Docker puis démarrer la pile :
 
 ```bash
 sudo pacman -Syu --needed docker docker-compose
@@ -63,7 +63,7 @@ sudo docker compose --env-file .local/zelda.env -f docker-compose.zelda.yaml con
 sudo docker compose --env-file .local/zelda.env -f docker-compose.zelda.yaml up -d --build
 ```
 
-Ouvrir https://IP_DE_LA_VM:3443, accepter le certificat local et autoriser le microphone. Les premiers démarrages téléchargent les modèles STT/VAD. La pile utilise des noms et volumes zelda-* ; ses ports sont ceux de CAAL, donc éviter une autre pile CAAL sur les mêmes ports.
+Depuis la VM, ouvrir http://localhost:3000 et autoriser le microphone. Depuis un autre appareil, utiliser https://IP_DE_LA_VM:3443 avec un certificat approuvé sur cet appareil. Les premiers démarrages téléchargent les modèles STT/VAD. La pile utilise des noms et volumes zelda-* ; ses ports sont ceux de CAAL, donc éviter une autre pile CAAL sur les mêmes ports.
 
 Les moteurs natifs écoutent sur l'IP LAN de la VM afin d'être accessibles depuis les conteneurs. Leurs API utilisent les clés générées dans .local/zelda.env. Aucun accès cloud n'est nécessaire pour l'inférence après les téléchargements ; la recherche web de CAAL reste une fonction réseau optionnelle.
 
@@ -71,7 +71,7 @@ Les moteurs natifs écoutent sur l'IP LAN de la VM afin d'être accessibles depu
 
 Dans Home Assistant, installer l'intégration MCP Server et exposer à Assist les entités voulues. Dans les paramètres CAAL, activer Home Assistant, garder l'URL préparée et saisir localement un jeton longue durée. Ne pas publier ce jeton dans Git. L'intégration reste désactivée tant que le jeton n'est pas renseigné.
 
-Tester d'abord une lecture d'état, puis une commande simple. Le bon fonctionnement des appels d'outils avec Bonsai reste à valider ; une réponse vocale seule ne suffit pas à prouver que l'action a été exécutée.
+Tester d'abord une lecture d'état, puis une commande simple. La connexion MCP et la lecture du contexte HA ont été vérifiées. Une réponse vocale seule ne suffit pas à prouver qu’une action a été exécutée. Les noms MCP par intégration, comme `homeassistant__GetLiveContext`, sont pris en charge.
 
 ## 5. Tester Hey Zelda
 
@@ -83,11 +83,14 @@ Le profil active ce détecteur à un seuil de 0,5. La session du navigateur doit
 
 - Six tests Python du pont TTS passent : authentification, requêtes invalides, WAV, concurrence, expiration, texte transmis comme données.
 - TypeScript sans émission, compilation syntaxique Python et syntaxe des scripts shell : passent.
-- ONNX Checker et inférence CPU sur des embeddings nuls : passent pour Hey Zelda.
-- La configuration des cinq services passe docker compose config --quiet. Les conteneurs restent à construire et tester.
+- Hey Zelda : ONNX valide ; détection d’une phrase synthétique anglaise au score 0,834 (seuil 0,5). Le premier essai synthétique français ne déclenche pas le détecteur. Un test de prononciation réelle reste nécessaire.
+- Les cinq services Docker sont construits et démarrés. Le frontend Next.js compile et les services avec sondes sont sains.
+- Réponse de Bonsai via l’API de chat CAAL et réception de la voix Qwen via LiveKit : vérifiées.
+- Trois tests de compatibilité HA passent : anciens noms, noms par intégration et formats du contexte.
 - Le binaire PrismML démarre ; le GGUF a été téléchargé et son SHA-256 vérifié. Réponse française et appel d’outil fictif validés via HTTP ; aucune commande HA exécutée.
-- Home Assistant répond HTTP 200.
-- Test de coexistence : Bonsai chargé sur la VM et Qwen3-TTS ont produit 3,76 s de WAV en 2,96 s, chargement et HTTP inclus. Restent à tester : image Docker, conversation complète, contrôle HA et détection sur microphone.
+- Home Assistant : authentification MCP, liste des outils et lecture des entités exposées validées sans commande physique. Une question de température via CAAL déclenche bien `hass(action="status")` et Bonsai restitue la mesure.
+- Whisper small transcrit correctement l’échantillon synthétique « Hey Zelda ! ».
+- Test de coexistence : Bonsai chargé sur la VM et Qwen3-TTS ont produit 3,76 s de WAV en 2,96 s, chargement et HTTP inclus. Restent à tester : conversation au microphone réel et commande d’un appareil choisi par l’utilisateur.
 
 
 
@@ -119,3 +122,18 @@ Après redémarrage, relancer les deux moteurs dans leurs terminaux puis :
 systemctl is-active docker
 sudo docker compose --env-file .local/zelda.env -f docker-compose.zelda.yaml up -d --build
 ```
+
+## Accès aux moteurs avec UFW
+
+Si les moteurs répondent depuis la VM mais expirent depuis Docker, identifier
+le bridge et le sous-réseau de `zelda-network` avec `docker network inspect`.
+Autoriser uniquement ce bridge vers l’IP de la VM, en TCP sur 8081 et 8890 :
+
+```bash
+sudo ufw allow in on NOM_DU_BRIDGE from SOUS_RESEAU_DOCKER to IP_DE_LA_VM port 8081,8890 proto tcp
+```
+
+Le nom du bridge peut changer si le réseau Docker est supprimé puis recréé.
+Les paramètres utilisent explicitement `/app/config/settings.json` ; les clés
+LiveKit sont générées dans les deux fichiers de configuration privés de `.local/`.
+Les certificats sont exclus du contexte de construction Docker.

@@ -27,8 +27,8 @@ services:
       - "30000-30100:30000-30100/udp"  # TURN relay ports
       - "51000-51100:51000-51100/udp"  # WebRTC media ports (changed from 50000 to avoid Chrome conflicts)
     volumes:
-      - ./livekit.yaml:/etc/livekit-lan.yaml:ro
-      - ./livekit-tailscale.yaml.template:/etc/livekit.yaml.template:ro
+      - ./.local/livekit.yaml:/etc/livekit-lan.yaml:ro
+      - ./.local/livekit-tailscale.yaml.template:/etc/livekit.yaml.template:ro
       - ./certs:/etc/livekit/certs:ro
     environment:
       - HTTPS_DOMAIN=${HTTPS_DOMAIN:-}
@@ -64,6 +64,7 @@ services:
       - LIVEKIT_URL=ws://livekit:7880
       - SPEACHES_URL=http://speaches:8000
       - CAAL_MEMORY_DIR=/app/data
+      - CAAL_SETTINGS_PATH=/app/config/settings.json
       - QWEN_TTS_URL=${QWEN_TTS_URL}
       - QWEN_TTS_API_KEY=${QWEN_TTS_API_KEY}
       - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-small}

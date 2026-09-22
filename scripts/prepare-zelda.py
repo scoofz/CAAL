@@ -20,7 +20,7 @@ ipaddress.IPv4Address(args.host_ip)
 root = Path(__file__).resolve().parents[1]
 local = root / '.local'
 local.mkdir(mode=0o700, exist_ok=True)
-for name in ['zelda.env', 'settings.json']:
+for name in ['zelda.env', 'settings.json', 'livekit.yaml', 'livekit-tailscale.yaml.template']:
     if (local / name).exists():
         parser.error(f'{local / name} already exists; edit it instead of overwriting')
 for name in ['speaker', 'tts_bin', 'tts_model', 'tts_mmproj', 'bonsai_server', 'bonsai_model']:
@@ -30,7 +30,7 @@ for name in ['speaker', 'tts_bin', 'tts_model', 'tts_mmproj', 'bonsai_server', '
     setattr(args, name, str(value))
 values = {
     'CAAL_HOST_IP': args.host_ip, 'QWEN_TTS_HOST': args.host_ip,
-    'LIVEKIT_API_KEY': 'devkey', 'LIVEKIT_API_SECRET': 'secret',
+    'LIVEKIT_API_KEY': 'zelda', 'LIVEKIT_API_SECRET': secrets.token_urlsafe(32),
     'QWEN_TTS_URL': f'http://{args.host_ip}:8890/v1',
     'QWEN_TTS_BIN': args.tts_bin, 'QWEN_TTS_MODEL': args.tts_model,
     'QWEN_TTS_MMPROJ': args.tts_mmproj, 'QWEN_TTS_SPEAKER': args.speaker,
@@ -42,6 +42,11 @@ values = {
 env = local / 'zelda.env'
 env.touch(mode=0o600)
 env.write_text(''.join(f'{key}={shlex.quote(value)}\n' for key, value in values.items()))
+for template in ('livekit.yaml', 'livekit-tailscale.yaml.template'):
+    output = local / template
+    output.touch(mode=0o600)
+    output.write_text((root / template).read_text().replace(
+        '  devkey: secret', f"  {values['LIVEKIT_API_KEY']}: {values['LIVEKIT_API_SECRET']}"))
 settings = {
     'first_launch_completed': True, 'agent_name': 'Zelda', 'language': 'fr',
     'stt_provider': 'speaches', 'tts_provider': 'qwen3',

@@ -703,7 +703,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     # Say a canned greeting using agent name — avoids LLM call that could trigger tools
     agent_name = settings_module.get_setting("agent_name", "Cal")
-    await session.say(f"Hello! I'm {agent_name}, your voice assistant. How can I help you?")
+    greeting = (
+        f"Bonjour ! Je suis {agent_name}, votre assistante vocale. Comment puis-je vous aider ?"
+        if language == "fr"
+        else f"Hello! I'm {agent_name}, your voice assistant. How can I help you?"
+    )
+    await session.say(greeting)
 
     logger.info("Agent ready - listening for speech...")
 
@@ -762,9 +767,9 @@ def preload_models():
         except Exception as e:
             logger.warning(f"  Failed to preload STT model: {e}")
 
-    # Warm up Ollama LLM (skip if using Groq cloud LLM)
-    if llm_provider == "groq":
-        logger.info("  Skipping LLM preload (using Groq)")
+    # Warm up only Ollama; other providers manage their own model lifecycle.
+    if llm_provider != "ollama":
+        logger.info(f"  Skipping Ollama preload (using {llm_provider})")
     else:
         ollama_host = settings.get("ollama_host") or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         ollama_model = settings.get("ollama_model") or os.getenv("OLLAMA_MODEL", "ministral-3:8b")
