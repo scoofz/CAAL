@@ -63,3 +63,9 @@ logs
 
 # Claude
 .claude
+
+# Zelda private configuration, model downloads and test environment
+.local
+certs
+*.gguf
+*.wav

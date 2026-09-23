@@ -155,7 +155,8 @@
       "kokoroDesc": "TTS neuronal haute qualité accéléré GPU",
       "piperDesc": "Léger, compatible CPU avec plus de 35 langues",
       "kokoroNote": "Kokoro nécessite un GPU pour des performances optimales.",
-      "piperNote": "Piper fonctionne sur CPU et supporte de nombreuses langues."
+      "piperNote": "Piper fonctionne sur CPU et supporte de nombreuses langues.",
+      "qwen3Note": "Voix de référence locale Zelda. Le service Qwen3-TTS doit être démarré."
     }
   },
   "Tools": {

@@ -72,7 +72,7 @@ DEFAULT_SETTINGS = {
     # Provider settings (UI sets both together, but stored separately for power users)
     "stt_provider": "speaches",  # "speaches" | "groq"
     "llm_provider": "ollama",  # "ollama" | "groq"
-    "tts_provider": "kokoro",  # "kokoro" | "piper"
+    "tts_provider": "kokoro",  # "kokoro" | "piper" | "qwen3"
     # TTS settings - voice selection (Kokoro uses voice param, Piper bakes voice into model)
     "tts_voice_kokoro": "am_puck",
     "tts_voice_piper": "speaches-ai/piper-en_US-ryan-high",

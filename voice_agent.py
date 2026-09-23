@@ -364,7 +364,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         logger.info(f"  STT: Groq (whisper-large-v3-turbo, lang={language})")
     else:
         logger.info(f"  STT: {SPEACHES_URL} ({WHISPER_MODEL}, lang={language})")
-    if runtime["tts_provider"] == "piper":
+    if runtime["tts_provider"] == "qwen3":
+        logger.info("  TTS: Qwen3 (zelda)")
+    elif runtime["tts_provider"] == "piper":
         logger.info(f"  TTS: Piper ({runtime['tts_voice_piper']})")
     else:
         logger.info(f"  TTS: Kokoro ({runtime['tts_voice_kokoro']})")
@@ -432,18 +434,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 greeting = random.choice(wake_greetings)
                 logger.info(f"Wake word detected, playing greeting: {greeting}")
 
-                # Get TTS and audio output from session
-                tts = _session_ref.tts
-                audio_output = _session_ref.output.audio
-
-                # Synthesize and push audio frames directly (bypasses turn-taking)
-                audio_stream = tts.synthesize(greeting)
-                async for event in audio_stream:
-                    if hasattr(event, "frame") and event.frame:
-                        await audio_output.capture_frame(event.frame)
-
-                # Flush to complete the audio segment
-                audio_output.flush()
+                # Let the session track speaking state and manage audio output.
+                await _session_ref.say(greeting, allow_interruptions=False)
 
             except Exception as e:
                 logger.warning(f"Failed to play wake greeting: {e}")
@@ -467,6 +459,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         stt_instance = WakeWordGatedSTT(
             inner_stt=base_stt,
             model_path=wake_word_model,
+            transcription_fallback=(
+                runtime["stt_provider"] == "speaches"
+                and os.getenv("ZELDA_WAKE_TRANSCRIPTION_FALLBACK", "false").lower() == "true"
+            ),
             threshold=wake_word_threshold,
             silence_timeout=wake_word_timeout,
             on_wake_detected=on_wake_detected,
@@ -497,7 +493,15 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 f"Kokoro TTS with {language} (no Piper service available)"
             )
 
-    if tts_provider == "piper":
+    if tts_provider == "qwen3":
+        tts_instance = SyncOpenAITTS(
+            base_url=os.getenv("QWEN_TTS_URL", "http://host.docker.internal:8890/v1"),
+            api_key=os.getenv("QWEN_TTS_API_KEY", "not-needed"),
+            model="qwen3-tts",
+            voice="zelda",
+            response_format="wav",
+        )
+    elif tts_provider == "piper":
         piper_voice = runtime["tts_voice_piper"]
         tts_instance = openai.TTS(
             base_url=f"{PIPER_URL}/v1",
@@ -695,7 +699,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     # Say a canned greeting using agent name — avoids LLM call that could trigger tools
     agent_name = settings_module.get_setting("agent_name", "Cal")
-    await session.say(f"Hello! I'm {agent_name}, your voice assistant. How can I help you?")
+    greeting = (
+        f"Bonjour ! Je suis {agent_name}, votre assistante vocale. Comment puis-je vous aider ?"
+        if language == "fr"
+        else f"Hello! I'm {agent_name}, your voice assistant. How can I help you?"
+    )
+    await session.say(greeting)
 
     logger.info("Agent ready - listening for speech...")
 
@@ -754,9 +763,9 @@ def preload_models():
         except Exception as e:
             logger.warning(f"  Failed to preload STT model: {e}")
 
-    # Warm up Ollama LLM (skip if using Groq cloud LLM)
-    if llm_provider == "groq":
-        logger.info("  Skipping LLM preload (using Groq)")
+    # Warm up only Ollama; other providers manage their own model lifecycle.
+    if llm_provider != "ollama":
+        logger.info(f"  Skipping Ollama preload (using {llm_provider})")
     else:
         ollama_host = settings.get("ollama_host") or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         ollama_model = settings.get("ollama_model") or os.getenv("OLLAMA_MODEL", "ministral-3:8b")

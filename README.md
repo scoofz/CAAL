@@ -1,5 +1,7 @@
 # CAAL
 
+> **Zelda / AMD Vulkan** : [installation locale avec Qwen3-TTS, Bonsai 2 et Hey Zelda](docs/ZELDA-LOCAL.md).
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![LiveKit](https://img.shields.io/badge/LiveKit-Agents-purple.svg)](https://docs.livekit.io/agents/)

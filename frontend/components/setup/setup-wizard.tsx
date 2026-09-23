@@ -26,7 +26,7 @@ export interface SetupData {
   openrouter_api_key: string;
   openrouter_model: string;
   // TTS Provider
-  tts_provider: 'kokoro' | 'piper';
+  tts_provider: 'kokoro' | 'piper' | 'qwen3';
   tts_voice_kokoro: string;
   tts_voice_piper: string;
   // Integrations
